@@ -22,6 +22,7 @@ New-Variable -Option Constant -ErrorAction SilentlyContinue -Name eflowProducts 
     "Azure IoT Edge CR ARM64" = "https://aka.ms/AzEFLOWMSI-CR-ARM64"
     "Azure IoT Edge 1.4 LTS X64"   = "https://aka.ms/AzEFLOWMSI_1_4_LTS_X64"
     "Azure IoT Edge 1.4 LTS ARM64" = "https://aka.ms/AzEFLOWMSI_1_4_LTS_ARM64"
+    "Azure IoT Edge 1.5 LTS X64"   = "https://aka.ms/AzEFLOWMSI_1_5_LTS_X64"
 }
 
 New-Variable -Option Constant -ErrorAction SilentlyContinue -Name eflowProvisioningProperties -Value @{
@@ -161,7 +162,7 @@ function Test-EadUserConfigNetwork {
                 Write-Host "Error: adapterName required for External switch" -ForegroundColor Red
                 $errCnt += 1
             } else {
-                $nwadapters = (Get-NetAdapter -Physical) | Where-Object { $_.Status -eq "Up" }
+                $nwadapters = (Get-NetAdapter -Physical) | Where-Object { $_.Status -eq 'Up' -and $_.ConnectorPresent } | Select-Object -First 1
                 if ($nwadapters.Name -notcontains ($nwCfg.adapterName)) {
                     Write-Host "Error: $($nwCfg.adapterName) not found. External switch creation will fail." -ForegroundColor Red
                     $errCnt += 1
@@ -630,7 +631,15 @@ function Invoke-EadEflowInstall {
     }
     Write-Host "Installing $reqProduct from $url"
     $ProgressPreference = 'SilentlyContinue'
-    Invoke-WebRequest $url -OutFile .\AzureIoTEdge.msi
+    
+    # BSINGH - Custom  check
+    if (Test-Path -Path ".\AzureIoTEdge.msi") {
+        Write-Host "Using existing AzureIoTEdge.msi file"
+    } else {
+        Write-Host "Downloading AzureIoTEdge.msi..."
+        Invoke-WebRequest $url -OutFile .\AzureIoTEdge.msi
+    }
+    
     $argList = '/I AzureIoTEdge.msi /qn '
     if ($eflowConfig.installOptions) {
         $installPath = $eflowConfig.installOptions.installPath
@@ -644,7 +653,7 @@ function Invoke-EadEflowInstall {
     }
     Write-Host $argList
     Start-Process msiexec.exe -Wait -ArgumentList $argList
-    Remove-Item .\AzureIoTEdge.msi
+    # Remove-Item .\AzureIoTEdge.msi
     $ProgressPreference = 'Continue'
     Write-Host "$reqProduct successfully installed"
     return $true
@@ -1030,7 +1039,7 @@ function New-EadEflowVmSwitch {
 
         New-NetNat -Name "$($nwCfg.vSwitchName)-NAT" -InternalIPInterfaceAddressPrefix $natPrefix |  Out-Null
     } else {
-        $nwadapters = (Get-NetAdapter -Physical -ErrorAction SilentlyContinue) | Where-Object { $_.Status -eq "Up" }
+        $nwadapters = (Get-NetAdapter -Physical -ErrorAction SilentlyContinue) | Where-Object { $_.Status -eq 'Up' -and $_.ConnectorPresent } | Select-Object -First 1
         if ($nwadapters.Name -notcontains ($nwCfg.adapterName)) {
             Write-Host "Error: $($nwCfg.adapterName) not found. External switch not created." -ForegroundColor Red
             return $false
@@ -1118,12 +1127,83 @@ function Start-EadWorkflow {
     return $true
 }
 
+function Enable-Ping {
+    Write-Host "Enabling ping on EFLOW VM..."
+    Invoke-EflowVmCommand "sudo iptables -A INPUT -p icmp --icmp-type 8 -s 0/0 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT"
+    Write-Host "Ping enabled on EFLOW VM."
+}
+
+# Function to update the EFLOW VM docker configuration
+function Update-DockerConfig {
+    $remoteDaemonJsonPathTemp = "/tmp/daemon.json"
+    $remoteDaemonJsonPath = "/etc/docker/daemon.json"
+
+    try{
+        Write-Host "Update the EFLOW VM docker configuration..."
+
+        # Upload the daemon.json to a temp location on the EFLOW VM
+        Write-Host "Uploading daemon.json to EFLOW VM tmp..."
+        Copy-EflowVmFile -fromFile (Join-Path $PSScriptRoot "eflow-dockerdaemon.json") -toFile $remoteDaemonJsonPathTemp -pushFile
+
+        # Move it to /etc/docker using sudo
+        Write-Host "Moving it /etc/docker..."
+        Invoke-EflowVmCommand -Command "sudo mv '$remoteDaemonJsonPathTemp' $remoteDaemonJsonPath"
+
+        # Restart Docker to apply new configuration
+        Write-Host "Restarting Docker service to apply changes..."
+        Invoke-EflowVmCommand -Command "sudo systemctl restart docker"
+    }
+    catch {
+        Write-Host "Failed to update the EFLOW VM container logging configuration: $($_.Exception.Message)" "ERROR"
+    }
+}
+
+function Add-ConfigSettings {
+    $tomlFile = "/etc/aziot/config.toml"
+    $tomlConfigFile = "eflow-tomlconfig.txt"
+    $vmTempFile = "/tmp/toml-config-temp.txt"  # Temporary file inside EFLOW VM
+
+    try {
+        # Copy the TOML config file into the EFLOW VM
+        Write-Host "Copying TOML config file to EFLOW VM..."
+        Copy-EflowVmFile -fromFile (Join-Path $PSScriptRoot $tomlConfigFile) -toFile $vmTempFile -pushFile
+
+        # Append the config file inside EFLOW VM
+        Write-Host "Appending TOML config to $tomlFile inside EFLOW VM..."
+        Invoke-EflowVmCommand -command "sudo bash -c 'cat $vmTempFile >> $tomlFile'"
+
+        Write-Host "TOML config appended successfully."
+
+        # Apply the configuration changes inside EFLOW VM
+        Write-Host "Applying configuration to Azure IoT Edge..."
+        Invoke-EflowVmCommand -command "sudo iotedge config apply"
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Configuration applied successfully."
+        }
+        else {
+            Write-Error "Failed to apply configuration. Exit code: $LASTEXITCODE"
+        }
+
+        # Cleanup: Remove the temporary file inside EFLOW VM
+        Write-Host "Cleaning up temporary files..."
+        Invoke-EflowVmCommand -command "sudo rm -f $vmTempFile"
+        Write-Host "Cleanup complete."
+    }
+    catch {
+        Write-Error "Error: $_"
+    }
+}
+
 ### MAIN ###
 # Get Host PC information on loading of this script
 Get-HostPcInfo
 # If autodeploy switch is specified, start eflow deployment with the default json file path (.\eflow-userconfig.json)
 if ($AutoDeploy) {
     if (Start-EadWorkflow) {
+        Enable-Ping
+        Update-DockerConfig
+        Add-ConfigSettings
         Write-Host "Deployment Successful"
     } else {
         Write-Error -Message "Deployment failed" -Category OperationStopped
