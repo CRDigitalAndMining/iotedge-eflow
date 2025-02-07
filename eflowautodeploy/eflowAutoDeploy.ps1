@@ -1160,8 +1160,8 @@ function Update-DockerConfig {
 
 function Add-ConfigSettings {
     $tomlFile = "/etc/aziot/config.toml"
-    $tomlConfigFile = "eflow-tomlconfig.txt"
-    $vmTempFile = "/tmp/toml-config-temp.txt"  # Temporary file inside EFLOW VM
+    $tomlConfigFile = "eflow-config.toml"
+    $vmTempFile = "/tmp/eflow-config.toml"  # Temporary file inside EFLOW VM
 
     try {
         # Copy the TOML config file into the EFLOW VM
@@ -1170,6 +1170,10 @@ function Add-ConfigSettings {
 
         # Append the config file inside EFLOW VM
         Write-Host "Appending TOML config to $tomlFile inside EFLOW VM..."
+        Get-Content (Join-Path $PSScriptRoot $tomlConfigFile) | ForEach-Object {
+            Write-Host $_ -ForegroundColor Green
+        }
+
         Invoke-EflowVmCommand -command "sudo bash -c 'cat $vmTempFile >> $tomlFile'"
 
         Write-Host "TOML config appended successfully."
