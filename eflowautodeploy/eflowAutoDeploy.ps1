@@ -9,19 +9,20 @@ param(
 New-Variable -Name eflowAutoDeployVersion -Value "1.0.220831.0800" -Option Constant -ErrorAction SilentlyContinue
 #Hashtable to store session information
 $eadSession = @{
-    "HostPC"         = @{"FreeMem" = 0; "TotalMem" = 0; "FreeDisk" = 0; "TotalDisk" = 0; "TotalCPU" = 0; "Name" = $null}
-    "HostOS"         = @{"Name" = $null; "Version" = $null; "IsServerSKU" = $false; "IsVM" = $false; "IsAzureVM" = $false}
-    "EFLOW"          = @{"Product" = $null; "Version" = $null}
+    "HostPC"         = @{"FreeMem" = 0; "TotalMem" = 0; "FreeDisk" = 0; "TotalDisk" = 0; "TotalCPU" = 0; "Name" = $null }
+    "HostOS"         = @{"Name" = $null; "Version" = $null; "IsServerSKU" = $false; "IsVM" = $false; "IsAzureVM" = $false }
+    "EFLOW"          = @{"Product" = $null; "Version" = $null }
     "UserConfig"     = $null
     "UserConfigFile" = $null
 }
 
 New-Variable -Option Constant -ErrorAction SilentlyContinue -Name eflowProducts -Value @{
-    "Azure IoT Edge LTS"      = "https://aka.ms/AzEflowMSI"
-    "Azure IoT Edge CR X64"   = "https://aka.ms/AzEFLOWMSI-CR-X64"
-    "Azure IoT Edge CR ARM64" = "https://aka.ms/AzEFLOWMSI-CR-ARM64"
+    "Azure IoT Edge LTS"           = "https://aka.ms/AzEflowMSI"
+    "Azure IoT Edge CR X64"        = "https://aka.ms/AzEFLOWMSI-CR-X64"
+    "Azure IoT Edge CR ARM64"      = "https://aka.ms/AzEFLOWMSI-CR-ARM64"
     "Azure IoT Edge 1.4 LTS X64"   = "https://aka.ms/AzEFLOWMSI_1_4_LTS_X64"
     "Azure IoT Edge 1.4 LTS ARM64" = "https://aka.ms/AzEFLOWMSI_1_4_LTS_ARM64"
+    "Azure IoT Edge 1.5 LTS X64"   = "https://aka.ms/AzEFLOWMSI_1_5_LTS_X64"
 }
 
 New-Variable -Option Constant -ErrorAction SilentlyContinue -Name eflowProvisioningProperties -Value @{
@@ -61,17 +62,18 @@ function Get-HostPcInfo {
     $eadSession.HostPC.FreeDisk = [Math]::Round($pCDrive.Freespace / 1GB) # convert bytes into GB
     $eadSession.HostPC.TotalDisk = [Math]::Round($pCDrive.Size / 1GB) # convert bytes into GB
     Write-Host "Free Disk / Total Disk`t: $($eadSession.HostPC.FreeDisk) GB / $($eadSession.HostPC.TotalDisk) GB"
-    if ((Get-CimInstance Win32_BaseBoard).Product -eq 'Virtual Machine'){
+    if ((Get-CimInstance Win32_BaseBoard).Product -eq 'Virtual Machine') {
         $eadSession.HostOS.IsVM = $true
         Write-Host "Running as a virtual machine " -NoNewline
-        if (Get-Service WindowsAzureGuestAgent -ErrorAction SilentlyContinue){
+        if (Get-Service WindowsAzureGuestAgent -ErrorAction SilentlyContinue) {
             $eadSession.HostOS.IsAzureVM = $true
             Write-Host "in Azure environment " -NoNewline
         }
         if ($pCS.HypervisorPresent) {
             Write-Host "with Nested Hyper-V enabled"
             #(Get-VMProcessor -VM $vm).ExposeVirtualizationExtensions
-        } else {
+        }
+        else {
             Write-Host "without Nested Hyper-V" -ForegroundColor Red
         }
     }
@@ -91,12 +93,12 @@ function Read-EadUserConfig {
 
         # Remove unncesary empty network parameters
         $eadSession.UserConfig.network.PSObject.Properties | ForEach {
-            if  ($_.TypeNameOfValue -is [System.String] -and [string]::IsNullOrEmpty($_.Value))
-            {
+            if ($_.TypeNameOfValue -is [System.String] -and [string]::IsNullOrEmpty($_.Value)) {
                 $eadSession.UserConfig.network.PSObject.Properties.Remove($_.Name)
             }
         }
-    } else { Write-Host "Error: EFLOWUserConfigFile not configured" -ForegroundColor Red }
+    }
+    else { Write-Host "Error: EFLOWUserConfigFile not configured" -ForegroundColor Red }
 }
 
 function Set-EadUserConfig {
@@ -136,7 +138,8 @@ function Test-EadUserConfigNetwork {
         if ($eadSession.HostOS.IsServerSKU) {
             Write-Host "Error: Server SKU, requires Network configuration, see https://aka.ms/AzEFLOW-vSwitch" -ForegroundColor Red
             return $false
-        } else {
+        }
+        else {
             Write-Host "* Client SKU : No Network configuration specified. Default Switch will be used." -ForegroundColor Green
             return $true
         }
@@ -146,33 +149,39 @@ function Test-EadUserConfigNetwork {
         if ($eadSession.HostOS.IsServerSKU) {
             Write-Host "Error: Server SKU, a virutal switch is needed - For more information about EFLOW virutal switch creation, see https://aka.ms/AzEFLOW-vSwitch" -ForegroundColor Red
             $errCnt += 1
-        } else { Write-Host "* Client SKU : No virtual switch specified - Default Switch will be used." -ForegroundColor Green }
-    } else { Write-Host "* Using virtual switch $($nwCfg.vswitchName)" -ForegroundColor Green }
+        }
+        else { Write-Host "* Client SKU : No virtual switch specified - Default Switch will be used." -ForegroundColor Green }
+    }
+    else { Write-Host "* Using virtual switch $($nwCfg.vswitchName)" -ForegroundColor Green }
     # Check if the virtual switch type and associated properties
     switch ($nwCfg.vSwitchType) {
         "Internal" {
             if (-not $eadSession.HostOS.IsServerSKU ) {
                 Write-Host "Error: vSwitchType is incorrect. Supported types : External (Client and Server) and Internal (Server)" -ForegroundColor Red
                 $errCnt += 1
-            } else { Write-Host "* Using vSwitchType Internal" -ForegroundColor Green }
+            }
+            else { Write-Host "* Using vSwitchType Internal" -ForegroundColor Green }
         }
         "External" {
             if ([string]::IsNullOrEmpty($nwCfg.adapterName)) {
                 Write-Host "Error: adapterName required for External switch" -ForegroundColor Red
                 $errCnt += 1
-            } else {
-                $nwadapters = (Get-NetAdapter -Physical) | Where-Object { $_.Status -eq "Up" }
+            }
+            else {
+                $nwadapters = (Get-NetAdapter -Physical) | Where-Object { $_.Status -eq 'Up' -and $_.ConnectorPresent } | Select-Object -First 1
                 if ($nwadapters.Name -notcontains ($nwCfg.adapterName)) {
                     Write-Host "Error: $($nwCfg.adapterName) not found. External switch creation will fail." -ForegroundColor Red
                     $errCnt += 1
-                } else { Write-Host "* Using vSwitchType External" -ForegroundColor Green }
+                }
+                else { Write-Host "* Using vSwitchType External" -ForegroundColor Green }
             }
         }
         default {
             if ($eadSession.HostOS.IsServerSKU ) {
                 Write-Host "Error: vSwitchType is incorrect. Supported types : External (Client and Server) and Internal (Server)" -ForegroundColor Red
                 $errCnt += 1
-            } else { Write-Host "* Using vSwitchType Default" -ForegroundColor Green }
+            }
+            else { Write-Host "* Using vSwitchType Default" -ForegroundColor Green }
         }
     }
 
@@ -182,18 +191,21 @@ function Test-EadUserConfigNetwork {
         [string]::IsNullOrEmpty($nwCfg.ip4GatewayAddress) -and
         [string]::IsNullOrEmpty($nwCfg.ip4PrefixLength)) {
         Write-Host "* No static IP address provided - DHCP allocation or auto-static ip(internal switch) will be used" -ForegroundColor Green
-    } elseif ([string]::IsNullOrEmpty($nwCfg.ip4Address) -or
+    }
+    elseif ([string]::IsNullOrEmpty($nwCfg.ip4Address) -or
         [string]::IsNullOrEmpty($nwCfg.ip4GatewayAddress) -or
         [string]::IsNullOrEmpty($nwCfg.ip4PrefixLength)) {
         Write-Host "Error: IP4Address, IP4GatewayAddress and IP4PrefixLength parameters are needed" -ForegroundColor Red
         $errCnt += 1
-    } else {
+    }
+    else {
         $ipconfigstatus = $true
         if (-not ($nwCfg.ip4Address -as [IPAddress] -as [Bool])) {
             Write-Host "Error: Invalid IP4Address $($nwCfg.ip4Address)" -ForegroundColor Red
             $errCnt += 1
             $ipconfigstatus = $false
-        } else {
+        }
+        else {
             #Ping IP to ensure it is free
             $status = Test-Connection $nwCfg.ip4Address -Count 1 -Quiet
             if ($status) {
@@ -207,7 +219,8 @@ function Test-EadUserConfigNetwork {
             Write-Host "Error: Invalid IP4GatewayAddress $($nwCfg.ip4GatewayAddress)" -ForegroundColor Red
             $errCnt += 1
             $ipconfigstatus = $false
-        } else {
+        }
+        else {
             $status = Test-Connection $nwCfg.ip4GatewayAddress -Count 1 -Quiet
             if ((-not $status) -and ($nwCfg.vSwitchType -ieq "External")) {
                 Write-Host "Error: ip4GatewayAddress $($nwCfg.ip4GatewayAddress) is not reachable. Required for external switch" -ForegroundColor Red
@@ -240,10 +253,12 @@ function Test-EadUserConfigNetwork {
         $hostSettings = Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' | Select-Object ProxyServer, ProxyEnable
         if ($hostSettings.ProxyEnable) {
             Write-Host "Using $($hostSettings.ProxyServer) as proxy settings"
-        } else {
+        }
+        else {
             Write-Host "Warning: useHostProxy is set, but no proxy setting found in host." -ForegroundColor Yellow
         }
-    } else {
+    }
+    else {
         if (![string]::IsNullOrEmpty($nwCfg.httpProxy) -and $nwCfg.httpProxy -NotLike "http://*") {
             Write-Host "Error: The httpProxy address $($nwCfg.httpProxy) is not valid." -ForegroundColor Red
             $errCnt += 1
@@ -262,7 +277,8 @@ function Test-EadUserConfigNetwork {
     if ($errCnt) {
         Write-Host "$errCnt errors found in the Network Configuration. Fix errors before deployment" -ForegroundColor Red
         $retval = $false
-    } else {
+    }
+    else {
         Write-Host "*** No errors found in the Network Configuration." -ForegroundColor Green
     }
     return $retval
@@ -280,9 +296,12 @@ function Test-EadUserConfigInstall {
             if ($eadSession.EFLOW.Product -ne $eflowConfig.eflowProduct) {
                 Write-Host "Error: Installed product $($eadSession.EFLOW.Product) does not match requested product $($eflowConfig.eflowProduct)." -ForegroundColor Red
                 $errCnt += 1
-            } else { Write-Host "* $($eflowConfig.eflowProduct) is installed" -ForegroundColor Green }
-        } else { Write-Host "* $($eflowConfig.eflowProduct) to be installed" -ForegroundColor Green }
-    } else {
+            }
+            else { Write-Host "* $($eflowConfig.eflowProduct) is installed" -ForegroundColor Green }
+        }
+        else { Write-Host "* $($eflowConfig.eflowProduct) to be installed" -ForegroundColor Green }
+    }
+    else {
         Write-Host "Error: Incorrect eflowProduct." -ForegroundColor Red
         Write-Host "Supported products: [$($Script:eflowProducts.Keys -join ',' )]"
         $errCnt += 1
@@ -310,7 +329,8 @@ function Test-EadUserConfigInstall {
     if ($errCnt) {
         Write-Host "$errCnt errors found in the Install Configuration. Fix errors before Install" -ForegroundColor Red
         $retval = $false
-    } else {
+    }
+    else {
         Write-Host "*** No errors found in the Install Configuration." -ForegroundColor Green
     }
     return $retval
@@ -330,14 +350,16 @@ function Test-EadUserConfigDeploy {
     Write-Host "--- Verifying EULA and telemetry..."
     if (($euCfg.acceptEula) -and ($euCfg.acceptEula -eq "Yes")) {
         Write-Host "* EULA accepted." -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Host "Error: Missing/incorrect mandatory EULA acceptance. Set acceptEula Yes" -ForegroundColor Red
         $errCnt += 1
     }
 
     if (($euCfg.acceptOptionalTelemetry) -and ($euCfg.acceptOptionalTelemetry -eq "Yes")) {
         Write-Host "* Optional telemetry accepted." -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Host "- Optional telemetry not accepted. Basic telemetry will be sent." -ForegroundColor Yellow
     }
 
@@ -353,14 +375,16 @@ function Test-EadUserConfigDeploy {
 
     if ($vmCfg.cpuCount -gt 0) {
         Write-Host "* Virtual machine will be created with $($vmCfg.cpuCount) vCPUs."
-    } else {
+    }
+    else {
         Write-Host "* No custom vCPUs used - Using default configuration, virtual machine will be created with 1 vCPUs."
         if ($vmCfg) { $vmCfg.PSObject.properties.remove('cpuCount') }
     }
 
     if ($vmCfg.memoryInMB -gt 0) {
         Write-Host "* Virtual machine will be created with $($vmCfg.memoryInMB) MB of memory."
-    } else {
+    }
+    else {
         Write-Host "* No custom memory used - Using default configuration, virtual machine will be created with 1024 MB of memory."
         if ($vmCfg) { $vmCfg.PSObject.properties.remove('memoryInMB') }
     }
@@ -371,11 +395,13 @@ function Test-EadUserConfigDeploy {
         if (($vmCfg.vmDiskSize -ge $lowerLimit) -and ($vmCfg.vmDiskSize -le 2000)) {
             #Between $lowerLimit GB and 2 TB
             Write-Host "* Virtual machine VHDX will be created with $($vmCfg.vmDiskSize) GB disk size."
-        } else {
+        }
+        else {
             Write-Host "Error: vmDiskSize should be between $lowerLimit GB and 2000 GB(2TB)" -ForegroundColor Red
             $errCnt += 1
         }
-    } else {
+    }
+    else {
         Write-Host "* No custom disk size used - Using default configuration, virtual machine VHDX will be created with 29 GB of disk size."
         if ($vmCfg) { $vmCfg.PSObject.properties.remove('vmDiskSize') }
     }
@@ -384,16 +410,19 @@ function Test-EadUserConfigDeploy {
             Write-Host "Error: vmDataSize is not supported in Azure IoT Edge LTS" -ForegroundColor Red
             $errCnt += 1
         }
-    } else {
+    }
+    else {
         if ($vmCfg.vmDataSize) {
             if (($vmCfg.vmDataSize -ge 2) -and ($vmCfg.vmDataSize -le 2000)) {
                 #Between 2 GB and 2 TB
                 Write-Host "* Virtual machine VHDX will be created with $($vmCfg.vmDataSize) GB of data size."
-            } else {
+            }
+            else {
                 Write-Host "Error: vmDataSize should be between 2 GB and 2000 GB(2TB)" -ForegroundColor Red
                 $errCnt += 1
             }
-        } else {
+        }
+        else {
             Write-Host "* No custom data size used - Using default configuration, virtual machine VHDX will be created with 10 GB of data size."
             if ($vmCfg) { $vmCfg.PSObject.properties.remove('vmDataSize') }
         }
@@ -412,11 +441,13 @@ function Test-EadUserConfigDeploy {
             $vmCfg.PSObject.properties.remove('gpuName')
             $vmCfg.PSObject.properties.remove('gpuCount')
         }
-    } else {
+    }
+    else {
         if ($vmCfg.gpuPassthroughType -ne 'DirectDeviceAssignment' -and $vmCfg.gpuPassthroughType -ne 'ParaVirtualization') {
             Write-Host "Error: GpuPassthrough type is invalid - Supported types: DirectDeviceAssignment or ParaVirtualization" -ForegroundColor Red
             $errCnt += 1
-        } else { Write-Host "* $($vmCfg.gpuPassthroughType) specified" -ForegroundColor Green }
+        }
+        else { Write-Host "* $($vmCfg.gpuPassthroughType) specified" -ForegroundColor Green }
 
         if ([string]::IsNullOrEmpty($vmCfg.gpuName)) {
             Write-Host "Error: GpuName must be provided" -ForegroundColor Red
@@ -430,7 +461,8 @@ function Test-EadUserConfigDeploy {
     if ($errCnt) {
         Write-Host "$errCnt errors found in the Deployment Configuration. Fix errors before deployment" -ForegroundColor Red
         $retval = $false
-    } else {
+    }
+    else {
         Write-Host "*** No errors found in the Deployment Configuration." -ForegroundColor Green
     }
     return $retval
@@ -455,7 +487,8 @@ function Test-EadUserConfigProvision {
     if (-not $Script:eflowProvisioningProperties.ContainsKey($provCfg.provisioningType)) {
         Write-Host "Error: provisioningType is incorrect or not specified.`nSupported provisioningType: [$($Script:eflowProvisioningProperties.Keys)]" -ForegroundColor Red
         $errCnt += 1
-    } else {
+    }
+    else {
         Write-Host "* $($provCfg.provisioningType)" -ForegroundColor Green
     }
 
@@ -477,7 +510,8 @@ function Test-EadUserConfigProvision {
                         $errCnt += 1
                     }
                 }
-            } else {
+            }
+            else {
                 Write-Host "Error: provisioningType $($provCfg.provisioningType) requires $setting value." -ForegroundColor Red
                 $errCnt += 1
             }
@@ -488,7 +522,8 @@ function Test-EadUserConfigProvision {
     if ($errCnt) {
         Write-Host "$errCnt errors found in the Provisioning Configuration. Fix errors before deployment" -ForegroundColor Red
         $retval = $false
-    } else {
+    }
+    else {
         Write-Host "No errors found in the Provisioning Configuration." -ForegroundColor Green
     }
     return $retval
@@ -549,7 +584,8 @@ function Test-HyperVStatus {
             Write-Host "Rebooting machine for enabling Hyper-V" -ForegroundColor Yellow
             Restart-Computer -Force -ErrorAction SilentlyContinue
         }
-    } else {
+    }
+    else {
         Write-Host "Hyper-V is enabled" -ForegroundColor Green
     }
     return $retval
@@ -568,7 +604,8 @@ function Test-EadEflowVmProvision {
         else {
             Write-Host "config.yaml is not default. EFLOW VM maybe provisioned earlier." -ForegroundColor Yellow
         }
-    } else {
+    }
+    else {
         Write-Host "Error: Eflow VM is not running. Cannot determine provisioning status." -ForegroundColor Red
     }
     return $retval
@@ -581,10 +618,11 @@ function Test-EadEflowVmRun {
     #>
     $retval = $false
     if ($eadSession.HostOS.IsServerSKU) {
-        $vm = Get-VM | Where-Object { $_.Name -like '*EFLOW'}
+        $vm = Get-VM | Where-Object { $_.Name -like '*EFLOW' }
         if ($vm -and ($vm.State -ieq 'Running')) { $retval = $true }
 
-    } else {
+    }
+    else {
         $found = (hcsdiag list) | Select-String -Pattern 'wssdagent'
         <# hcsdiag list -raw supported only in later windows versions
         $pVMList = (hcsdiag list -raw) | ConvertTo-Json -ErrorAction SilentlyContinue
@@ -629,8 +667,16 @@ function Invoke-EadEflowInstall {
         $url = $eflowConfig.eflowProductUrl
     }
     Write-Host "Installing $reqProduct from $url"
-    $ProgressPreference = 'SilentlyContinue'
-    Invoke-WebRequest $url -OutFile .\AzureIoTEdge.msi
+    
+    # BSINGH - Custom  check
+    if (Test-Path -Path ".\AzureIoTEdge.msi") {
+        Write-Host "Using existing AzureIoTEdge.msi file"
+    }
+    else {
+        Write-Host "Downloading AzureIoTEdge.msi..."
+        Download-File -Url $url -OutFile ".\AzureIoTEdge.msi"
+    }
+    
     $argList = '/I AzureIoTEdge.msi /qn '
     if ($eflowConfig.installOptions) {
         $installPath = $eflowConfig.installOptions.installPath
@@ -644,10 +690,93 @@ function Invoke-EadEflowInstall {
     }
     Write-Host $argList
     Start-Process msiexec.exe -Wait -ArgumentList $argList
-    Remove-Item .\AzureIoTEdge.msi
+    # Remove-Item .\AzureIoTEdge.msi
     $ProgressPreference = 'Continue'
     Write-Host "$reqProduct successfully installed"
     return $true
+}
+
+# Function to download a file from a URL
+function Download-File {
+    param (
+        [string]$url,
+        [string]$outFile
+    )
+
+    function convertFileSize {
+        param(
+            $bytes
+        )
+    
+        if ($bytes -lt 1MB) {
+            return "$([Math]::Round($bytes / 1KB, 2)) KB"
+        }
+        elseif ($bytes -lt 1GB) {
+            return "$([Math]::Round($bytes / 1MB, 2)) MB"
+        }
+        elseif ($bytes -lt 1TB) {
+            return "$([Math]::Round($bytes / 1GB, 2)) GB"
+        }
+    }
+
+    try {
+        
+        $outPath = "$PSScriptRoot\$outFile"
+        Write-Host "Downloading $url to $outPath..."
+        
+        $webClient = New-Object -TypeName System.Net.WebClient
+        $webClient.Credentials = $login
+        
+        Unregister-Event -SourceIdentifier WebClient.DownloadProgressChanged -ErrorAction SilentlyContinue
+        Register-ObjectEvent -InputObject $webClient -EventName DownloadProgressChanged -SourceIdentifier WebClient.DownloadProgressChanged | Out-Null
+        
+        $startTime = Get-Date
+        $lastBytesReceived = 0
+        $task = $webClient.DownloadFileTaskAsync($url, $outPath)
+        
+        Start-Sleep -Seconds 1
+        
+        while (!($task.IsCompleted)) {
+
+            # Check if any download progress events have been raised
+            if (Get-Event -SourceIdentifier WebClient.DownloadProgressChanged -ErrorAction SilentlyContinue) {
+        
+                $EventData = Get-Event -SourceIdentifier WebClient.DownloadProgressChanged | Select-Object -ExpandProperty "SourceEventArgs" -Last 1
+        
+                $ReceivedData = ($EventData | Select-Object -ExpandProperty "BytesReceived")
+                $TotalToReceive = ($EventData | Select-Object -ExpandProperty "TotalBytesToReceive")
+                $TotalPercent = $EventData | Select-Object -ExpandProperty "ProgressPercentage"
+        
+                $currentTime = Get-Date
+                $elapsedTime = New-TimeSpan -Start $startTime -End $currentTime
+                $bytesReceivedSinceLastUpdate = $ReceivedData - $lastBytesReceived
+                $speedKBps = [Math]::Round($bytesReceivedSinceLastUpdate / $elapsedTime.TotalSeconds / 1KB, 2)
+        
+                Start-Sleep -Milliseconds 200
+        
+                Write-Progress -Activity "Downloading File" -Status "Percent Complete: $($TotalPercent)%, Speed: $($speedKBps) KB/s" -CurrentOperation "Downloaded $(convertFileSize -bytes $ReceivedData) / $(convertFileSize -bytes $TotalToReceive)" -PercentComplete $TotalPercent
+
+                $startTime = $currentTime
+                $lastBytesReceived = $ReceivedData
+            }
+            else {
+                # If no events have been raised yet, sleep for a short time before checking again
+                Start-Sleep -Milliseconds 500
+            }
+        }
+        
+        Unregister-Event -SourceIdentifier WebClient.DownloadProgressChanged
+        $webClient.Dispose()
+    }
+    catch {
+        Write-Error "Error downloading file: $($_.Exception.Message)"
+    }
+    finally {
+        # Ensure the WebClient is disposed of
+        if ($webClient) {
+            $webClient.Dispose()
+        }
+    }
 }
 
 function Remove-EadEflowInstall {
@@ -658,7 +787,8 @@ function Remove-EadEflowInstall {
     $eflowInfo = Get-ChildItem -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\' | Get-ItemProperty |  Where-Object { $_.DisplayName -match 'Azure IoT Edge *' }
     if ($null -eq $eflowInfo) {
         Write-Host "Azure IoT Edge is not installed."
-    } else {
+    }
+    else {
         Write-Host "$($eflowInfo.DisplayName) version $($eflowInfo.DisplayVersion) is installed. Removing..."
         Start-Process msiexec.exe -Wait -ArgumentList "/x $($eflowInfo.PSChildName) /quiet /noreboot"
         # Remove the module from Powershell session as well
@@ -678,7 +808,8 @@ function Get-EadEflowInstalledVersion {
     $retval = $null
     if ($null -eq $eflowInfo) {
         Write-Host "Azure IoT Edge is not installed."
-    } else {
+    }
+    else {
         $retval = "$($eflowInfo.DisplayName),$($eflowInfo.DisplayVersion)"
         $eadSession.EFLOW.Version = $eflowInfo.DisplayVersion
         $eadSession.EFLOW.Product = $eflowInfo.DisplayName
@@ -733,7 +864,8 @@ function Invoke-EadEflowDeploy {
 
     if ($retval -ieq "OK") {
         Write-Host "* EFLOW VM deployment successfull." -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Host "Error: EFLOW VM deployment failed with the below error message." -ForegroundColor Red
         Write-Host "Error message : $retval." -ForegroundColor Red
         return $false
@@ -805,7 +937,8 @@ function Invoke-EadEflowProvision {
     if ($retval -ieq "OK") {
         Write-Host "* EFLOW provisioning successfull." -ForegroundColor Green
         Start-Sleep 60 #wait a minute to allow iotedge initialize
-    } else {
+    }
+    else {
         Write-Host "Error: EFLOW provisioning failed with the below error message." -ForegroundColor Red
         Write-Host "Error message : $retval." -ForegroundColor Red
         return $false
@@ -814,7 +947,7 @@ function Invoke-EadEflowProvision {
 }
 
 function Invoke-EadEflowProxyConfiguration {
-   <#
+    <#
     .DESCRIPTION
         Loads the proxy configuration and tries to set up proxy on the VM
     #>
@@ -830,7 +963,8 @@ function Invoke-EadEflowProxyConfiguration {
             $proxyParams.Add("httpsProxy", "$($hostSettings.ProxyServer)")
             $proxyParams.Add("httpProxy", "$($hostSettings.ProxyServer)")
         }
-    } else {
+    }
+    else {
         if ($eflowConfig.network.httpsProxy) {
             $proxyParams.Add("httpsProxy", "$($eflowConfig.network.httpsProxy)")
         }
@@ -844,7 +978,8 @@ function Invoke-EadEflowProxyConfiguration {
     if ($proxyParams.Count) {
         Write-Host "Starting EFLOW VM Proxy configuration..." -ForegroundColor Green
         Set-EflowVmProxyServers @proxyParams
-    } else {
+    }
+    else {
         Write-Host "No proxy configuration found. Skipping EFLOW VM proxy configuration" -ForegroundColor Green
     }
     return $true
@@ -855,7 +990,8 @@ function Test-EadEflowProxyConfiguration {
     if ([string]::IsNullOrEmpty($proxyEnv)) {
         Write-Host "No EFLOW VM proxy configuration already applied" -ForegroundColor Green
         $retval = $false
-    } else {
+    }
+    else {
         Write-Host "Error: Eflow VM proxy already configured - Try manual configuration" - -ForegroundColor Red
         $retval = $true
     }
@@ -932,7 +1068,8 @@ function Test-EadEflowVmSwitch {
             if ($defaultSwitch) {
                 Write-Host "* Default switch found" -ForegroundColor Green
                 $retval = $true
-            } else {
+            }
+            else {
                 Write-Host "Error: Default switch not found" - -ForegroundColor Red
                 $retval = $false
             }
@@ -965,7 +1102,8 @@ function Test-EadEflowVmSwitch {
                     Write-Host "           Gateway IP4Address: $($nwCfg.ip4GatewayAddress)" -ForegroundColor Green
                     Write-Host "                 PrefixLength: $($nwCfg.ip4PrefixLength)" -ForegroundColor Green
                 }
-            } else {
+            }
+            else {
                 # No Nat. Not in a good state, so either we auto delete and recreate or report error and bail
                 # bailing out for now
                 Write-Host "Error: Internal switch found. NAT not found. Delete switch and recreate." -ForegroundColor Red
@@ -973,7 +1111,8 @@ function Test-EadEflowVmSwitch {
             }
         }
         Write-Host "* Name:$($eflowSwitch.Name) - Type:$($eflowSwitch.SwitchType)" -ForegroundColor Green
-    } else {
+    }
+    else {
         # no switch found. Create if requested
         if ($Create) {
             return New-EadEflowVmSwitch
@@ -1029,8 +1168,9 @@ function New-EadEflowVmSwitch {
         Write-Host "                 PrefixLength: $($nwCfg.ip4PrefixLength)" -ForegroundColor Green
 
         New-NetNat -Name "$($nwCfg.vSwitchName)-NAT" -InternalIPInterfaceAddressPrefix $natPrefix |  Out-Null
-    } else {
-        $nwadapters = (Get-NetAdapter -Physical -ErrorAction SilentlyContinue) | Where-Object { $_.Status -eq "Up" }
+    }
+    else {
+        $nwadapters = (Get-NetAdapter -Physical -ErrorAction SilentlyContinue) | Where-Object { $_.Status -eq 'Up' -and $_.ConnectorPresent } | Select-Object -First 1
         if ($nwadapters.Name -notcontains ($nwCfg.adapterName)) {
             Write-Host "Error: $($nwCfg.adapterName) not found. External switch not created." -ForegroundColor Red
             return $false
@@ -1091,7 +1231,8 @@ function Start-EadWorkflow {
     # Check if EFLOW is deployed already and bail out
     if (Test-EadEflowVmDeploy) {
         Write-Host "EFLOW VM is already deployed." -ForegroundColor Yellow
-    } else {
+    }
+    else {
         if (!(Test-EadEflowVmSwitch -Create)) { return $false } #create switch if specified
         # We are here.. all is good so far. Validate and deploy eflow
         if (!(Invoke-EadEflowDeploy)) { return $false }
@@ -1099,12 +1240,12 @@ function Start-EadWorkflow {
 
     if (! (Test-EadEflowVmProvision)) {
         # Validate and provision eflow
-        if (!(Invoke-EadEflowProvision)) { return $false}
+        if (!(Invoke-EadEflowProvision)) { return $false }
     }
 
     if (! (Test-EadEflowProxyConfiguration)) {
         # Validate and provision eflow
-        if (!(Invoke-EadEflowProxyConfiguration)) { return $false}
+        if (!(Invoke-EadEflowProxyConfiguration)) { return $false }
     }
 
     if (Verify-EflowVm) {
@@ -1118,17 +1259,96 @@ function Start-EadWorkflow {
     return $true
 }
 
+# Function to enable ping on the EFLOW VM
+function Enable-Ping {
+    Write-Host "Enabling ping on EFLOW VM..."
+    Invoke-EflowVmCommand "sudo iptables -A INPUT -p icmp --icmp-type 8 -s 0/0 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT"
+    Write-Host "Ping enabled on EFLOW VM."
+}
+
+# Function to update the EFLOW VM docker configuration
+function Update-DockerConfig {
+    try {
+        $remoteDaemonJsonPathTemp = "/tmp/daemon.json"
+        $remoteDaemonJsonPath = "/etc/docker/daemon.json"
+
+        Write-Host "Update the EFLOW VM docker configuration..."
+
+        # Upload the daemon.json to a temp location on the EFLOW VM
+        Write-Host "Uploading daemon.json to EFLOW VM tmp..."
+        Copy-EflowVmFile -fromFile (Join-Path $PSScriptRoot "eflow-dockerdaemon.json") -toFile $remoteDaemonJsonPathTemp -pushFile
+
+        # Move it to /etc/docker using sudo
+        Write-Host "Moving it /etc/docker..."
+        Invoke-EflowVmCommand -Command "sudo mv '$remoteDaemonJsonPathTemp' $remoteDaemonJsonPath"
+
+        # Restart Docker to apply new configuration
+        Write-Host "Restarting Docker service to apply changes..."
+        Invoke-EflowVmCommand -Command "sudo systemctl restart docker"
+    }
+    catch {
+        Write-Host "Failed to update the EFLOW VM container logging configuration: $($_.Exception.Message)" "ERROR"
+    }
+}
+
+function Add-ConfigSettings {
+    $tomlFile = "/etc/aziot/config.toml"
+    $tomlConfigFile = "eflow-config.toml"
+    $vmTempFile = "/tmp/eflow-config.toml"  # Temporary file inside EFLOW VM
+
+    try {
+        # Copy the TOML config file into the EFLOW VM
+        Write-Host "Copying TOML config file to EFLOW VM..."
+        Copy-EflowVmFile -fromFile (Join-Path $PSScriptRoot $tomlConfigFile) -toFile $vmTempFile -pushFile
+
+        # Append the config file inside EFLOW VM
+        Write-Host "Appending TOML config to $tomlFile inside EFLOW VM..."
+        Get-Content (Join-Path $PSScriptRoot $tomlConfigFile) | ForEach-Object {
+            Write-Host $_ -ForegroundColor Green
+        }
+
+        Invoke-EflowVmCommand -command "sudo bash -c 'cat $vmTempFile >> $tomlFile'"
+
+        Write-Host "TOML config appended successfully."
+
+        # Apply the configuration changes inside EFLOW VM
+        Write-Host "Applying configuration to Azure IoT Edge..."
+        Invoke-EflowVmCommand -command "sudo iotedge config apply"
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Configuration applied successfully."
+        }
+        else {
+            Write-Error "Failed to apply configuration. Exit code: $LASTEXITCODE"
+        }
+
+        # Cleanup: Remove the temporary file inside EFLOW VM
+        Write-Host "Cleaning up temporary files..."
+        Invoke-EflowVmCommand -command "sudo rm -f $vmTempFile"
+        Write-Host "Cleanup complete."
+    }
+    catch {
+        Write-Error "Error: $_"
+    }
+}
+
 ### MAIN ###
 # Get Host PC information on loading of this script
 Get-HostPcInfo
+
 # If autodeploy switch is specified, start eflow deployment with the default json file path (.\eflow-userconfig.json)
 if ($AutoDeploy) {
     if (Start-EadWorkflow) {
+        Enable-Ping
+        Update-DockerConfig
+        Add-ConfigSettings
         Write-Host "Deployment Successful"
-    } else {
+    }
+    else {
         Write-Error -Message "Deployment failed" -Category OperationStopped
     }
-} else {
+}
+else {
     $eflowjson = "$PSScriptRoot\eflow-userconfig.json"
     if (Test-Path -Path "$eflowjson" -PathType Leaf) {
         Set-EadUserConfig $eflowjson
