@@ -668,16 +668,18 @@ function Invoke-EadEflowInstall {
     }
     Write-Host "Installing $reqProduct from $url"
     
-    # BSINGH - Custom  check
-    if (Test-Path -Path ".\AzureIoTEdge.msi") {
+    $outInstallPath = "$PSScriptRoot\AzureIoTEdge.msi"
+
+    # BSINGH - Custom  check for existing MSI file
+    if (Test-Path -Path $outInstallPath) {
         Write-Host "Using existing AzureIoTEdge.msi file"
     }
     else {
         Write-Host "Downloading AzureIoTEdge.msi..."
-        Download-File -Url $url -OutFile ".\AzureIoTEdge.msi"
+        Download-File -Url $url -OutFile $outInstallPath
     }
-    
-    $argList = '/I AzureIoTEdge.msi /qn '
+
+    $argList = "/I $outInstallPath /qn "
     if ($eflowConfig.installOptions) {
         $installPath = $eflowConfig.installOptions.installPath
         if ($installPath) {
@@ -721,7 +723,7 @@ function Download-File {
 
     try {
         
-        $outPath = "$PSScriptRoot\$outFile"
+        $outPath = $outFile
         Write-Host "Downloading $url to $outPath..."
         
         $webClient = New-Object -TypeName System.Net.WebClient
@@ -1256,6 +1258,11 @@ function Start-EadWorkflow {
         Write-Host "EFLOW VM Info:"
         $eflowVM.SystemStatistics | Out-String
     }
+
+    Enable-Ping
+    Update-DockerConfig
+    Add-ConfigSettings
+    
     return $true
 }
 
@@ -1339,9 +1346,6 @@ Get-HostPcInfo
 # If autodeploy switch is specified, start eflow deployment with the default json file path (.\eflow-userconfig.json)
 if ($AutoDeploy) {
     if (Start-EadWorkflow) {
-        Enable-Ping
-        Update-DockerConfig
-        Add-ConfigSettings
         Write-Host "Deployment Successful"
     }
     else {
